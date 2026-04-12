@@ -61,7 +61,11 @@ async function loadState(): Promise<State> {
     return { events: {}, lastChecked: '' };
   }
   const raw = await readFile(STATE_PATH, 'utf8');
-  return JSON.parse(raw) as State;
+  const parsed = JSON.parse(raw) as Partial<State>;
+  return {
+    events: parsed.events ?? {},
+    lastChecked: parsed.lastChecked ?? ''
+  };
 }
 
 async function saveState(state: State): Promise<void> {
