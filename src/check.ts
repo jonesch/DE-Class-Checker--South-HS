@@ -22,6 +22,7 @@ interface StoredEvent {
 interface State {
   events: Record<string, StoredEvent>;
   lastChecked: string;
+  consecutiveZero: number;
 }
 
 async function scrape(): Promise<ClassEvent[]> {
@@ -58,13 +59,14 @@ async function scrape(): Promise<ClassEvent[]> {
 
 async function loadState(): Promise<State> {
   if (!existsSync(STATE_PATH)) {
-    return { events: {}, lastChecked: '' };
+    return { events: {}, lastChecked: '', consecutiveZero: 0 };
   }
   const raw = await readFile(STATE_PATH, 'utf8');
   const parsed = JSON.parse(raw) as Partial<State>;
   return {
     events: parsed.events ?? {},
-    lastChecked: parsed.lastChecked ?? ''
+    lastChecked: parsed.lastChecked ?? '',
+    consecutiveZero: parsed.consecutiveZero ?? 0
   };
 }
 
@@ -114,7 +116,12 @@ function diff(current: ClassEvent[], state: State): Notification[] {
   return notifications;
 }
 
-async function sendNtfy(body: string, title: string): Promise<void> {
+async function sendNtfy(
+  body: string,
+  title: string,
+  priority: 'default' | 'high' | 'urgent' = 'default',
+  tags = 'car'
+): Promise<void> {
   const topic = process.env.NTFY_TOPIC;
   if (!topic) throw new Error('Missing NTFY_TOPIC');
 
@@ -123,7 +130,8 @@ async function sendNtfy(body: string, title: string): Promise<void> {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       Title: title,
-      Tags: 'car',
+      Tags: tags,
+      Priority: priority,
       Click: 'https://ncdrivingschool.com/county/brunswick/north-brunswick-high-school/'
     },
     body
@@ -165,11 +173,59 @@ function formatNotifications(notifications: Notification[]): string {
   return ['NCDS North Brunswick:', ...lines].join('\n\n');
 }
 
+async function dispatchNotifications(
+  body: string,
+  title: string,
+  priority: 'default' | 'high' | 'urgent' = 'default',
+  tags = 'car'
+): Promise<void> {
+  const results = await Promise.allSettled([
+    sendNtfy(body, title, priority, tags),
+    sendEmail(body, title)
+  ]);
+  const failures = results.filter((r) => r.status === 'rejected');
+  for (const f of failures) {
+    console.error('Notification channel failed:', (f as PromiseRejectedResult).reason);
+  }
+  if (failures.length === results.length) {
+    throw new Error('All notification channels failed');
+  }
+}
+
 async function main(): Promise<void> {
   const current = await scrape();
   console.log(`Scraped ${current.length} classes`);
 
   const state = await loadState();
+
+  if (current.length === 0) {
+    state.consecutiveZero += 1;
+    console.log(`Zero-class run (streak: ${state.consecutiveZero})`);
+
+    if (state.consecutiveZero >= 2) {
+      await dispatchNotifications(
+        `Scraper has returned 0 classes for ${state.consecutiveZero} runs in a row. The site markup may have changed, or the page is broken. Investigate ASAP:\n\nhttps://ncdrivingschool.com/county/brunswick/north-brunswick-high-school/`,
+        `NCDS: ${state.consecutiveZero} ZERO-CLASS RUNS`,
+        'urgent',
+        'rotating_light'
+      );
+    } else {
+      await dispatchNotifications(
+        'Scraper returned 0 classes this run. Will alert urgently if it happens again next run.',
+        'NCDS: zero classes found',
+        'default',
+        'warning'
+      );
+    }
+
+    state.lastChecked = new Date().toISOString();
+    await saveState(state);
+    return;
+  }
+
+  // Found classes — reset the zero-run counter.
+  state.consecutiveZero = 0;
+
   const notifications = diff(current, state);
 
   if (notifications.length > 0) {
@@ -177,22 +233,7 @@ async function main(): Promise<void> {
     const body = formatNotifications(notifications);
     const subject = `NCDS: ${notifications.length} update${notifications.length === 1 ? '' : 's'}`;
     console.log(body);
-
-    // Send both in parallel; if one fails, still try the other.
-    const results = await Promise.allSettled([
-      sendNtfy(body, subject),
-      sendEmail(body, subject)
-    ]);
-    const failures = results.filter((r) => r.status === 'rejected');
-    if (failures.length > 0) {
-      for (const f of failures) {
-        console.error('Notification channel failed:', (f as PromiseRejectedResult).reason);
-      }
-      // Only hard-fail if BOTH channels failed.
-      if (failures.length === results.length) {
-        throw new Error('All notification channels failed');
-      }
-    }
+    await dispatchNotifications(body, subject);
   } else {
     console.log('No changes');
   }
