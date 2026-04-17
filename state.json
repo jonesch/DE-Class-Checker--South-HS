@@ -24,8 +24,18 @@
       "soldOut": false,
       "notifiedAvailable": true,
       "firstSeen": "2026-04-15T13:36:36.094Z"
+    },
+    "june-15-june-26-2026-1130am-230pm": {
+      "soldOut": false,
+      "notifiedAvailable": true,
+      "firstSeen": "2026-04-17T12:49:54.906Z"
+    },
+    "july-13-july-24-2026-800am-1100am": {
+      "soldOut": false,
+      "notifiedAvailable": true,
+      "firstSeen": "2026-04-17T12:49:54.906Z"
     }
   },
-  "lastChecked": "2026-04-17T12:25:11.432Z",
-  "consecutiveZero": 1
+  "lastChecked": "2026-04-17T12:49:55.071Z",
+  "consecutiveZero": 0
 }
