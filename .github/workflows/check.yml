@@ -1,13 +1,13 @@
 name: Check South HS classes
 
 on:
-  schedule:
+  #schedule:
     # Heartbeat fallback only — cron-job.org dispatches the real cadence (every
     # 5 min via workflow_dispatch). This GitHub cron exists so that if the
     # external scheduler dies (PAT expired, account deleted, outage), we still
     # get a run every 2 hours during the day to catch changes and surface the
     # zero-class alert if the scraper breaks.
-    - cron: '0 10-23/2 * * *'
+    #- cron: '0 10-23/2 * * *'
   workflow_dispatch:
 
 jobs:
